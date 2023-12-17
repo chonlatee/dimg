@@ -62,6 +62,13 @@ func downloadImg(url string) {
 func main() {
 	tick := time.NewTicker(1 * time.Second)
 
+	timeout := make(chan bool)
+
+	go func() {
+		time.Sleep(5 * time.Second)
+		timeout <- true
+	}()
+
 	urls := getImgURLs()
 
 	i := 0
@@ -72,10 +79,10 @@ outterLoop:
 		case <-tick.C:
 			downloadImg(urls[i])
 			i += 1
-			if i >= 5 {
-				tick.Stop()
-				break outterLoop
-			}
+		case <-timeout:
+			log.Println("Timeout")
+			tick.Stop()
+			break outterLoop
 		}
 	}
 
