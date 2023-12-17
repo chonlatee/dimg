@@ -11,7 +11,21 @@ import (
 	"github.com/PuerkitoBio/goquery"
 )
 
-func getImgURLs() []string {
+type pokemonDownloader struct {
+	closeCh chan bool
+	urlCh   chan string
+}
+
+func (p *pokemonDownloader) Close() {
+	log.Println("Close channel")
+	close(p.closeCh)
+}
+
+func (p *pokemonDownloader) GetImgURL() string {
+	return <-p.urlCh
+}
+
+func (p *pokemonDownloader) getAllImgURL() {
 
 	res, err := http.Get("https://pokemondb.net/pokedex/national")
 	if err != nil {
@@ -24,16 +38,14 @@ func getImgURLs() []string {
 		log.Fatalf("getImgURLs: goquery.NewDocumentFromReader err: %v", err)
 	}
 
-	var urls []string
-
 	doc.Find(".img-fixed").Each(func(i int, s *goquery.Selection) {
 		url, ok := s.Attr("src")
 		if ok {
-			urls = append(urls, url)
+			p.urlCh <- url
 		}
 	})
 
-	return urls
+	p.Close()
 }
 
 func downloadImg(url string) {
@@ -65,22 +77,34 @@ func main() {
 	timeout := make(chan bool)
 
 	go func() {
-		time.Sleep(5 * time.Second)
+		time.Sleep(10 * time.Second)
 		timeout <- true
 	}()
 
-	urls := getImgURLs()
+	p := &pokemonDownloader{
+		closeCh: make(chan bool),
+		urlCh:   make(chan string),
+	}
 
-	i := 0
+	go func() {
+		time.Sleep(6 * time.Second)
+		p.Close()
+	}()
+
+	go p.getAllImgURL()
 
 outterLoop:
 	for {
 		select {
 		case <-tick.C:
-			downloadImg(urls[i])
-			i += 1
+			url := p.GetImgURL()
+			downloadImg(url)
 		case <-timeout:
-			log.Println("Timeout")
+			log.Println("timeout")
+			tick.Stop()
+			break outterLoop
+		case <-p.closeCh:
+			log.Println("channel closed")
 			tick.Stop()
 			break outterLoop
 		}
